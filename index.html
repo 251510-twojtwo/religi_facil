@@ -91,6 +91,33 @@
             cursor: pointer;
         }
 
+        .area-box {
+            display: flex;
+            gap: 7px;
+            margin-top: 10px;
+        }
+
+        #areaInput {
+            width: 0;
+            flex: 1;
+            min-width: 0;
+            padding: 9px 11px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        #areaButton {
+            padding: 9px 14px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #333;
+            color: white;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
         .utility-buttons {
             display: flex;
             flex-wrap: wrap;
@@ -322,6 +349,17 @@
             <button id="searchButton">검색</button>
         </div>
 
+        <!-- 다른 지역으로 이동 -->
+        <div class="area-box">
+            <input
+                id="areaInput"
+                type="text"
+                placeholder="다른 지역 이동 (예: 부산역, 전주 한옥마을)"
+                aria-label="이동할 지역"
+            >
+            <button id="areaButton">이동</button>
+        </div>
+
         <div class="utility-buttons">
             <button id="locationButton" class="utility-button">
                 현재 위치로 이동
@@ -329,6 +367,10 @@
 
             <button id="trafficButton" class="utility-button">
                 교통정보 켜기
+            </button>
+
+            <button id="researchButton" class="utility-button">
+                이 지역에서 다시 검색
             </button>
         </div>
 
@@ -423,6 +465,10 @@
 
     const locationButton = document.getElementById("locationButton");
     const trafficButton = document.getElementById("trafficButton");
+
+    const areaInput = document.getElementById("areaInput");
+    const areaButton = document.getElementById("areaButton");
+    const researchButton = document.getElementById("researchButton");
 
     const tabButtons = document.querySelectorAll(".tab-button");
 
@@ -1317,6 +1363,80 @@
 
         statusMessage.textContent = "현재 위치를 확인하고 있습니다.";
         getCurrentLocation();
+    });
+
+    // ==========================================
+    // 다른 위치에서 검색하기
+    // ==========================================
+
+    // 지금 보고 있는 지도 중심을 기준으로 다시 검색
+    function searchAtMapCenter() {
+        if (!mapReady) {
+            statusMessage.textContent =
+                "지도를 불러오는 중입니다. 잠시 기다려 주세요.";
+            return;
+        }
+
+        // 검색 기준 위치를 지도 중심으로 바꾸기
+        currentPosition = map.getCenter();
+
+        // 직접 검색 중이었다면 같은 검색어로, 아니면 현재 탭으로 다시 검색
+        if (activeTab === "custom" && searchInput.value.trim()) {
+            searchByInput();
+        } else {
+            searchTab(activeTab === "custom" ? "temple" : activeTab);
+        }
+    }
+
+    // 입력한 지역으로 지도를 옮긴 뒤 그 주변을 검색
+    function moveToArea() {
+        const areaName = areaInput.value.trim();
+
+        if (!areaName) {
+            statusMessage.textContent = "이동할 지역을 입력해 주세요.";
+            return;
+        }
+
+        if (!mapReady || !places) {
+            statusMessage.textContent =
+                "지도를 불러오는 중입니다. 잠시 기다려 주세요.";
+            return;
+        }
+
+        statusMessage.textContent = "'" + areaName + "' 위치를 찾고 있습니다.";
+
+        // 위치 옵션 없이 검색해서 전국에서 가장 관련 있는 곳을 찾음
+        places.keywordSearch(areaName, function (data, status) {
+            if (status !== kakao.maps.services.Status.OK || data.length === 0) {
+                statusMessage.textContent =
+                    "'" + areaName + "' 위치를 찾지 못했습니다. 역 이름이나 동 이름으로 다시 입력해 보세요.";
+                return;
+            }
+
+            const target = data[0];
+            const targetPosition = new kakao.maps.LatLng(
+                Number(target.y),
+                Number(target.x)
+            );
+
+            map.setLevel(5);
+            map.setCenter(targetPosition);
+
+            statusMessage.textContent =
+                "'" + target.place_name + "' 주변을 검색합니다.";
+
+            searchAtMapCenter();
+        });
+    }
+
+    researchButton.addEventListener("click", searchAtMapCenter);
+
+    areaButton.addEventListener("click", moveToArea);
+
+    areaInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            moveToArea();
+        }
     });
 
     // 교통정보 켜기 / 끄기
