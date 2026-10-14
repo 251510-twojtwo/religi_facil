@@ -46,7 +46,7 @@
 
         .tabs {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 6px;
             margin-bottom: 16px;
         }
@@ -140,6 +140,47 @@
             color: #555;
             font-size: 13px;
             line-height: 1.6;
+        }
+
+        .issue-notice {
+            margin: 0 0 10px;
+            padding: 12px;
+            border: 1px solid #f0c27b;
+            border-radius: 8px;
+            background: #fff7ea;
+            color: #7a4a00;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .issue-notice button {
+            display: block;
+            margin-top: 8px;
+            padding: 7px 12px;
+            border: none;
+            border-radius: 6px;
+            background: #e67e22;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .place-issue {
+            margin-top: 8px;
+            padding: 8px;
+            border-left: 3px solid #e67e22;
+            background: #fff7ea;
+            color: #7a4a00;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .place-issue a {
+            display: inline-block;
+            margin-top: 4px;
+            color: #2675d8;
+            text-decoration: none;
         }
 
         #resultList {
@@ -268,6 +309,7 @@
             <button class="tab-button" data-tab="cathedral">성당</button>
             <button class="tab-button" data-tab="church">교회</button>
             <button class="tab-button" data-tab="other">그 외</button>
+            <button class="tab-button" data-tab="issue">주의</button>
         </div>
 
         <div class="search-box">
@@ -307,11 +349,24 @@
                 <span class="legend-dot" style="background:#9467bd"></span>
                 그 외
             </span>
+            <span class="legend-item">
+                <span class="legend-dot" style="background:#e67e22"></span>
+                주의
+            </span>
         </div>
 
         <p id="statusMessage" role="status" aria-live="polite">
             카카오 지도를 불러오는 중입니다.
         </p>
+
+        <!-- 주의 탭 안내 문구 -->
+        <div id="issueNotice" class="issue-notice" hidden>
+            <strong>꼭 읽어 주세요</strong><br>
+            이 탭은 AI를 바탕으로 과거 뉴스에 보도된 주의가 필요한 종교 기관을 정리한 것입니다.
+            사실과 다르거나 오류가 있을 수 있고, 이름이 비슷한 다른 기관이 함께 검색될 수 있으니
+            이 점을 감안해 참고용으로만 보고, 관련 뉴스를 직접 확인해 주세요.
+            <button id="issueConfirmButton">확인했습니다</button>
+        </div>
 
         <div id="resultList"></div>
 
@@ -349,6 +404,7 @@
 
     let mapReady = false;
     let trafficEnabled = false;
+    let issueNoticeAccepted = false;
 
     let activeTab = "temple";
     let allPlaces = [];
@@ -370,20 +426,76 @@
 
     const tabButtons = document.querySelectorAll(".tab-button");
 
+    const issueNotice = document.getElementById("issueNotice");
+    const issueConfirmButton = document.getElementById("issueConfirmButton");
+
     // 탭마다 사용할 검색어
     const tabKeywords = {
         temple: ["불교 종교 시설", "절", "사찰"],
         cathedral: ["성당"],
         church: ["교회"],
-        other: ["종교 기관", "회당", "기도원", "원불교", "이슬람 사원", "천도교"]
+        other: ["종교 기관", "회당", "기도원", "원불교", "이슬람 사원", "천도교"],
+        issue: ["신천지", "기독교복음선교회", "만민중앙교회", "BTJ열방센터", "인터콥"]
     };
 
     const tabNames = {
         temple: "절",
         cathedral: "성당",
         church: "교회",
-        other: "그 외 종교 시설"
+        other: "그 외 종교 시설",
+        issue: "주의 종교 기관"
     };
+
+    // 주의 탭: 뉴스에 보도된 이슈가 있는 단체 목록
+    // matchWords가 장소 이름에 들어 있고, 카테고리가 '종교'인 곳만 표시
+    const issueGroups = [
+        {
+            name: "신천지예수교증거장막성전",
+            matchWords: ["신천지"],
+            issue: "2020년 대구 코로나19 집단감염 당시 교인 명단 제출 등 방역 협조 문제로 크게 보도됨",
+            newsQuery: "신천지 코로나19 집단감염"
+        },
+        {
+            name: "기독교복음선교회(JMS)",
+            matchWords: ["기독교복음선교회"],
+            issue: "총재 정명석이 신도 대상 성범죄로 실형을 선고받은 사건이 보도됨",
+            newsQuery: "JMS 정명석 판결"
+        },
+        {
+            name: "만민중앙교회",
+            matchWords: ["만민중앙"],
+            issue: "당회장 이재록이 신도 성폭행으로 실형이 확정된 사건이 보도됨",
+            newsQuery: "만민중앙교회 이재록 판결"
+        },
+        {
+            name: "인터콥 BTJ열방센터",
+            matchWords: ["열방센터", "인터콥"],
+            issue: "2020~2021년 경북 상주 BTJ열방센터 관련 코로나19 집단감염이 보도됨",
+            newsQuery: "BTJ열방센터 집단감염"
+        }
+    ];
+
+    // 장소가 주의 목록의 어떤 단체에 해당하는지 찾기
+    function getIssueInfo(place) {
+        const name = (place.place_name || "").toLowerCase();
+        const category = place.category_name || "";
+
+        if (!category.includes("종교")) {
+            return null;
+        }
+
+        for (const group of issueGroups) {
+            const matched = group.matchWords.some(function (word) {
+                return name.includes(word.toLowerCase());
+            });
+
+            if (matched) {
+                return group;
+            }
+        }
+
+        return null;
+    }
 
     // ==========================================
     // 2. 카카오 SDK 불러오기
@@ -553,14 +665,27 @@
 
         clearSearchResults();
 
+        // 주의 탭일 때만 안내 문구 표시
+        issueNotice.hidden = tabName !== "issue";
+
+        // 안내 문구를 확인하기 전에는 결과를 보여주지 않음
+        if (tabName === "issue" && !issueNoticeAccepted) {
+            statusMessage.textContent =
+                "아래 안내 문구를 읽고 '확인했습니다'를 눌러 주세요.";
+            return;
+        }
+
         statusMessage.textContent =
             tabNames[tabName] + "을(를) 검색하고 있습니다.";
 
         const keywords = tabKeywords[tabName];
 
+        // 주의 기관은 수가 적어서 최대 반경(20km)으로 검색
+        const searchRadius = tabName === "issue" ? 20000 : 5000;
+
         Promise.all(
             keywords.map(function (keyword) {
-                return searchKeyword(keyword);
+                return searchKeyword(keyword, searchRadius);
             })
         )
         .then(function (resultGroups) {
@@ -608,6 +733,8 @@
         tabButtons.forEach(function (button) {
             button.classList.remove("active");
         });
+
+        issueNotice.hidden = true;
 
         clearSearchResults();
         statusMessage.textContent = "'" + keyword + "'을(를) 검색하고 있습니다.";
@@ -668,7 +795,7 @@
     // 8. 카카오 장소 키워드 검색
     // ==========================================
 
-    function searchKeyword(keyword) {
+    function searchKeyword(keyword, radius) {
         return new Promise(function (resolve, reject) {
             const searchCenter = currentPosition || defaultPosition;
 
@@ -685,7 +812,7 @@
                 },
                 {
                     location: searchCenter,
-                    radius: 5000,
+                    radius: radius || 5000,
                     sort: kakao.maps.services.SortBy.DISTANCE,
                     size: 15
                 }
@@ -718,6 +845,10 @@
 
         if (tabName === "church") {
             return text.includes("교회") && !text.includes("성당");
+        }
+
+        if (tabName === "issue") {
+            return getIssueInfo(place) !== null;
         }
 
         if (tabName === "other") {
@@ -834,7 +965,7 @@
             bounds.extend(position);
 
             // 탭별로 서로 다른 마커 색상 적용
-            const markerImage = createMarkerImage(getMarkerColor());
+            const markerImage = createMarkerImage(getMarkerColor(), activeTab);
 
             const marker = new kakao.maps.Marker({
                 position: position,
@@ -876,6 +1007,34 @@
                 phone.className = "place-phone";
                 phone.textContent = "전화: " + place.phone;
                 item.appendChild(phone);
+            }
+
+            // 주의 탭이면 보도된 이슈와 뉴스 검색 링크 표시
+            const issueInfo = activeTab === "issue" ? getIssueInfo(place) : null;
+
+            if (issueInfo) {
+                const issueBox = document.createElement("div");
+                issueBox.className = "place-issue";
+
+                const issueText = document.createElement("div");
+                issueText.textContent =
+                    "[" + issueInfo.name + "] " + issueInfo.issue;
+                issueBox.appendChild(issueText);
+
+                const newsLink = document.createElement("a");
+                newsLink.href =
+                    "https://search.naver.com/search.naver?where=news&query=" +
+                    encodeURIComponent(issueInfo.newsQuery);
+                newsLink.target = "_blank";
+                newsLink.rel = "noopener noreferrer";
+                newsLink.textContent = "관련 뉴스 직접 확인하기";
+
+                newsLink.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                });
+
+                issueBox.appendChild(newsLink);
+                item.appendChild(issueBox);
             }
 
             if (place.place_url) {
@@ -965,6 +1124,10 @@
             return "#555555";
         }
 
+        if (activeTab === "issue") {
+            return "#e67e22";
+        }
+
         return "#9467bd";
     }
 
@@ -972,13 +1135,13 @@
     // 16. 마커 이미지 만들기
     // ==========================================
 
-    function createMarkerImage(color) {
+    function createMarkerImage(color, iconType) {
         const svg =
             '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42">' +
             '<path d="M16 1 C7.7 1 1 7.7 1 16 C1 26 16 41 16 41 C16 41 31 26 31 16 C31 7.7 24.3 1 16 1Z" fill="' +
             color +
             '" stroke="#ffffff" stroke-width="2"/>' +
-            '<circle cx="16" cy="16" r="5" fill="#ffffff"/>' +
+            getMarkerIcon(iconType, color) +
             '</svg>';
 
         const imageUrl =
@@ -989,6 +1152,55 @@
             new kakao.maps.Size(32, 42),
             { offset: new kakao.maps.Point(16, 42) }
         );
+    }
+
+    // 마커 안에 들어갈 건물 아이콘 (흰색 그림 + 핀 색으로 문·창문)
+    function getMarkerIcon(iconType, color) {
+        // 절: 2층 기와지붕
+        if (iconType === "temple") {
+            return '<g fill="#ffffff">' +
+                '<path d="M9 11.5 Q16 5.5 23 11.5 Z"/>' +
+                '<rect x="13" y="11.5" width="6" height="3"/>' +
+                '<path d="M6.5 17 Q16 10.5 25.5 17 Z"/>' +
+                '<rect x="9.5" y="17" width="13" height="6"/>' +
+                '</g>' +
+                '<rect x="14.5" y="19" width="3" height="4" fill="' + color + '"/>';
+        }
+
+        // 성당: 양쪽 첨탑 + 가운데 십자가 + 장미창
+        if (iconType === "cathedral") {
+            return '<g fill="#ffffff">' +
+                '<path d="M8 23 V13 L10 10 L12 13 V23 Z"/>' +
+                '<path d="M20 23 V13 L22 10 L24 13 V23 Z"/>' +
+                '<path d="M12 23 V16 L16 13 L20 16 V23 Z"/>' +
+                '<rect x="15.3" y="6.5" width="1.4" height="5.5"/>' +
+                '<rect x="14" y="8" width="4" height="1.4"/>' +
+                '</g>' +
+                '<circle cx="16" cy="17.8" r="1.5" fill="' + color + '"/>' +
+                '<rect x="14.8" y="20.3" width="2.4" height="2.7" fill="' + color + '"/>';
+        }
+
+        // 교회: 뾰족 종탑 하나 + 십자가 + 아치형 문
+        if (iconType === "church") {
+            return '<g fill="#ffffff">' +
+                '<rect x="15.2" y="4" width="1.6" height="5"/>' +
+                '<rect x="13.6" y="5.4" width="4.8" height="1.6"/>' +
+                '<path d="M11.5 14 L16 9 L20.5 14 Z"/>' +
+                '<rect x="11.5" y="14" width="9" height="9"/>' +
+                '</g>' +
+                '<path d="M14.5 23 V19.5 A1.5 1.5 0 0 1 17.5 19.5 V23 Z" fill="' + color + '"/>';
+        }
+
+        // 주의: 느낌표
+        if (iconType === "issue") {
+            return '<g fill="#ffffff">' +
+                '<rect x="14.5" y="7.5" width="3" height="9.5" rx="1.5"/>' +
+                '<circle cx="16" cy="21" r="1.8"/>' +
+                '</g>';
+        }
+
+        // 그 외, 직접 검색: 기존 흰 점
+        return '<circle cx="16" cy="16" r="5" fill="#ffffff"/>';
     }
 
     // ==========================================
@@ -1077,6 +1289,13 @@
         button.addEventListener("click", function () {
             searchTab(button.dataset.tab);
         });
+    });
+
+    // 주의 탭 안내 문구 확인
+    issueConfirmButton.addEventListener("click", function () {
+        issueNoticeAccepted = true;
+        issueConfirmButton.hidden = true;
+        searchTab("issue");
     });
 
     // 검색 버튼, Enter 키
