@@ -46,7 +46,7 @@
 
         .tabs {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(6, 1fr);
             gap: 6px;
             margin-bottom: 16px;
         }
@@ -56,7 +56,7 @@
             border: 1px solid #ddd;
             border-radius: 8px;
             background: white;
-            font-size: 14px;
+            font-size: 13px;
             cursor: pointer;
         }
 
@@ -335,6 +335,7 @@
             <button class="tab-button active" data-tab="temple">절</button>
             <button class="tab-button" data-tab="cathedral">성당</button>
             <button class="tab-button" data-tab="church">교회</button>
+            <button class="tab-button" data-tab="mosque">이슬람</button>
             <button class="tab-button" data-tab="other">그 외</button>
             <button class="tab-button" data-tab="issue">주의</button>
         </div>
@@ -386,6 +387,10 @@
             <span class="legend-item">
                 <span class="legend-dot" style="background:#2f9963"></span>
                 교회
+            </span>
+            <span class="legend-item">
+                <span class="legend-dot" style="background:#1a9aa6"></span>
+                이슬람
             </span>
             <span class="legend-item">
                 <span class="legend-dot" style="background:#9467bd"></span>
@@ -480,7 +485,8 @@
         temple: ["불교 종교 시설", "절", "사찰"],
         cathedral: ["성당"],
         church: ["교회"],
-        other: ["종교 기관", "회당", "기도원", "원불교", "이슬람 사원", "천도교"],
+        mosque: ["이슬람 사원", "모스크", "이슬람 성원", "이슬람 중앙 성원"],
+        other: ["종교 기관", "회당", "기도원", "원불교", "천도교"],
         issue: ["신천지", "기독교복음선교회", "만민중앙교회", "BTJ열방센터", "인터콥"]
     };
 
@@ -488,6 +494,7 @@
         temple: "절",
         cathedral: "성당",
         church: "교회",
+        mosque: "이슬람 사원",
         other: "그 외 종교 시설",
         issue: "주의 종교 기관"
     };
@@ -726,8 +733,9 @@
 
         const keywords = tabKeywords[tabName];
 
-        // 주의 기관은 수가 적어서 최대 반경(20km)으로 검색
-        const searchRadius = tabName === "issue" ? 20000 : 5000;
+        // 주의 기관과 이슬람 사원은 수가 적어서 최대 반경(20km)으로 검색
+        const searchRadius =
+            tabName === "issue" || tabName === "mosque" ? 20000 : 5000;
 
         Promise.all(
             keywords.map(function (keyword) {
@@ -870,6 +878,15 @@
     // 9. 탭에 맞는 장소인지 확인
     // ==========================================
 
+    // 이슬람 사원인지 확인 ('성원'은 종교 카테고리일 때만 인정)
+    function isMosquePlace(text) {
+        return (
+            text.includes("이슬람") ||
+            text.includes("모스크") ||
+            (text.includes("성원") && text.includes("종교"))
+        );
+    }
+
     function matchesTab(place, tabName) {
         const name = (place.place_name || "").toLowerCase();
         const category = (place.category_name || "").toLowerCase();
@@ -891,6 +908,10 @@
 
         if (tabName === "church") {
             return text.includes("교회") && !text.includes("성당");
+        }
+
+        if (tabName === "mosque") {
+            return isMosquePlace(text);
         }
 
         if (tabName === "issue") {
@@ -923,7 +944,13 @@
                 text.includes("성원") ||
                 text.includes("교당");
 
-            return isOtherReligion && !isTemple && !isCathedral && !isChurch;
+            return (
+                isOtherReligion &&
+                !isTemple &&
+                !isCathedral &&
+                !isChurch &&
+                !isMosquePlace(text)
+            );
         }
 
         return true;
@@ -1166,6 +1193,10 @@
             return "#2f9963";
         }
 
+        if (activeTab === "mosque") {
+            return "#1a9aa6";
+        }
+
         if (activeTab === "custom") {
             return "#555555";
         }
@@ -1235,6 +1266,21 @@
                 '<rect x="11.5" y="14" width="9" height="9"/>' +
                 '</g>' +
                 '<path d="M14.5 23 V19.5 A1.5 1.5 0 0 1 17.5 19.5 V23 Z" fill="' + color + '"/>';
+        }
+
+        // 이슬람 사원: 둥근 돔 + 초승달 + 양쪽 미나레트(첨탑)
+        if (iconType === "mosque") {
+            return '<g fill="#ffffff">' +
+                '<path d="M10 17 C10 12 13 10 16 8.5 C19 10 22 12 22 17 Z"/>' +
+                '<rect x="10" y="17" width="12" height="6"/>' +
+                '<rect x="6.5" y="11" width="2.4" height="12"/>' +
+                '<path d="M6.5 11 L7.7 8 L8.9 11 Z"/>' +
+                '<rect x="23.1" y="11" width="2.4" height="12"/>' +
+                '<path d="M23.1 11 L24.3 8 L25.5 11 Z"/>' +
+                '<circle cx="16" cy="6" r="1.9"/>' +
+                '</g>' +
+                '<circle cx="16.9" cy="5.6" r="1.6" fill="' + color + '"/>' +
+                '<path d="M14.6 23 V20.3 A1.4 1.4 0 0 1 17.4 20.3 V23 Z" fill="' + color + '"/>';
         }
 
         // 주의: 느낌표
